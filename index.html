@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Темп — трекер времени</title>
+  <script>
+    try {
+      document.documentElement.dataset.theme =
+        localStorage.getItem("temp-theme") ||
+        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" opacity=".25" />
+        <path d="M12 3a9 9 0 0 1 8.6 6.4" />
+        <path d="M12 7.5V12l3 1.8" />
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7.5V12l2.8 2" />
+      </symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 20h16" />
+        <rect x="5.5" y="11" width="3" height="6" rx="1" />
+        <rect x="10.5" y="5.5" width="3" height="11.5" rx="1" />
+        <rect x="15.5" y="13.5" width="3" height="3.5" rx="1" />
+      </symbol>
+      <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+        <path d="M8 5.6v12.8a1 1 0 0 0 1.53.85l10.2-6.4a1 1 0 0 0 0-1.7L9.53 4.75A1 1 0 0 0 8 5.6z" />
+      </symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="6.5" y="5" width="4" height="14" rx="1.6" />
+        <rect x="13.5" y="5" width="4" height="14" rx="1.6" />
+      </symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 21V4.5" />
+        <path d="M5 4.5c2.5-1.5 5-1.5 7 0s4.5 1.5 7 0V13c-2.5 1.5-5 1.5-7 0s-4.5-1.5-7 0" />
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6.5h16" />
+        <path d="M18.5 6.5l-.8 12.1a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 6.5" />
+        <path d="M9 6.5V4.8a1.3 1.3 0 0 1 1.3-1.3h3.4A1.3 1.3 0 0 1 15 4.8v1.7" />
+        <path d="M10 10.5v6M14 10.5v6" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 4v11" />
+        <path d="M7.5 10.5L12 15l4.5-4.5" />
+        <path d="M5 19.5h14" />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2.5v2M12 19.5v2M4.6 4.6L6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4" />
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.5 14.1A8.5 8.5 0 1 1 9.9 3.5a6.6 6.6 0 0 0 10.6 10.6z" />
+      </symbol>
+      <symbol id="i-sparkle" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M11 2.5c.6 4.9 2.6 6.9 7.5 7.5-4.9.6-6.9 2.6-7.5 7.5-.6-4.9-2.6-6.9-7.5-7.5 4.9-.6 6.9-2.6 7.5-7.5z" />
+        <path d="M18.5 14.5c.3 2 1 2.7 3 3-2 .3-2.7 1-3 3-.3-2-1-2.7-3-3 2-.3 2.7-1 3-3z" opacity=".6" />
+      </symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" />
+        <path d="M10 21a2.2 2.2 0 0 0 4 0" />
+        <path d="M12 3v2" />
+      </symbol>
+      <symbol id="i-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="13.5" r="7.5" />
+        <path d="M12 13.5V10M10 2.5h4M18.5 6.5l1.2-1.2" />
+      </symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M6 12h12" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M6 12h12M12 6v12" />
+      </symbol>
+      <symbol id="i-lock"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="5" y="10.5" width="14" height="10" rx="2.6" />
+        <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+      </symbol>
+    </defs>
+  </svg>
+
+  <header>
+    <a class="brand" href="./"><svg class="logo" aria-hidden="true"><use href="#i-logo" /></svg>темп<span class="brand-dot">.</span></a>
+    <div class="header-right">
+      <span class="local"><svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>Данные хранятся на этом устройстве</span>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Сменить тему">
+        <svg class="icon i-sun" aria-hidden="true"><use href="#i-sun" /></svg>
+        <svg class="icon i-moon" aria-hidden="true"><use href="#i-moon" /></svg>
+      </button>
+    </div>
+  </header>
+  <main>
+    <div class="heading">
+      <div>
+        <p class="eyebrow">ВРЕМЯ ДЛЯ ВАЖНОГО</p>
+        <h1>Каждая минута на своём месте.</h1>
+        <p class="subtitle">Замечайте, на что уходит время. Находите свой ритм.</p>
+      </div>
+      <div id="today" class="date"></div>
+    </div>
+    <nav role="tablist">
+      <button id="tracker-tab" role="tab" aria-selected="true" class="tab active"><svg class="icon" aria-hidden="true"><use href="#i-clock" /></svg>Трекер</button>
+      <button id="stats-tab" role="tab" aria-selected="false" class="tab"><svg class="icon" aria-hidden="true"><use href="#i-chart" /></svg>Статистика</button>
+    </nav>
+    <section id="tracker" role="tabpanel">
+      <div class="workspace">
+        <div class="clock-card">
+          <div class="card-top"><span>ТЕКУЩАЯ СЕССИЯ</span><span id="status" class="badge">Готовы начать</span></div>
+          <div class="dial">
+            <svg id="clock" viewBox="0 0 400 400" aria-label="Циферблат с отрезками времени">
+              <g id="dial-static"></g>
+              <g id="dial-live"></g>
+            </svg>
+          </div>
+          <div id="timer" class="timer">
+            <span id="timer-label" class="timer-label">ВАШЕ ВРЕМЯ</span>
+            <strong id="elapsed">00:00:00</strong>
+            <span id="start-time" class="timer-sub">Начните с одной минуты</span>
+          </div>
+          <div class="controls">
+            <button id="start" class="btn primary"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg><span>Начать</span></button>
+            <button id="pause" class="btn secondary" hidden></button>
+            <button id="finish" class="btn primary" hidden><svg class="icon" aria-hidden="true"><use href="#i-flag" /></svg><span>Закончить</span></button>
+          </div>
+          <p id="clock-note" class="hint">Один круг — 12 часов. Всё начинается с «Начать».</p>
+          <div class="legend"><span><i class="study"></i>Учёба</span><span><i class="break"></i>Перерыв</span><span><i
+                class="work"></i>Работа</span><span><i class="none"></i>Без категории</span></div>
+        </div>
+        <aside>
+          <div class="summary-card">
+            <p class="eyebrow">СЕГОДНЯ</p>
+            <h2 id="today-total">0 мин</h2>
+            <p class="subtitle">учтённого времени</p>
+            <div id="today-categories"></div>
+          </div>
+          <div id="timer-card" class="timer-card">
+            <div class="timer-card-top">
+              <div>
+                <p class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-timer" /></svg>ТАЙМЕР</p>
+                <h3>Ритм работы и отдыха</h3>
+              </div>
+              <label class="switch" title="Включить таймер"><input id="timer-on" type="checkbox" aria-label="Включить таймер"><span></span></label>
+            </div>
+            <div class="timer-fields">
+              <div class="field">
+                <span class="field-name"><i class="study"></i>Работа</span>
+                <div class="stepper">
+                  <button class="step" data-step="work:-5" aria-label="Меньше работы"><svg class="icon" aria-hidden="true"><use href="#i-minus" /></svg></button>
+                  <input id="timer-work" type="number" min="1" max="720" inputmode="numeric" aria-label="Работа, минут">
+                  <button class="step" data-step="work:5" aria-label="Больше работы"><svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg></button>
+                </div>
+                <small>мин</small>
+              </div>
+              <div class="field">
+                <span class="field-name"><i class="break"></i>Перерыв</span>
+                <div class="stepper">
+                  <button class="step" data-step="rest:-5" aria-label="Меньше перерыва"><svg class="icon" aria-hidden="true"><use href="#i-minus" /></svg></button>
+                  <input id="timer-rest" type="number" min="1" max="720" inputmode="numeric" aria-label="Перерыв, минут">
+                  <button class="step" data-step="rest:5" aria-label="Больше перерыва"><svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg></button>
+                </div>
+                <small>мин</small>
+              </div>
+            </div>
+            <div class="presets">
+              <button class="chip" data-preset="25,5">25 / 5</button>
+              <button class="chip" data-preset="50,10">50 / 10</button>
+              <button class="chip" data-preset="90,15">90 / 15</button>
+            </div>
+            <label class="check"><span class="switch small"><input id="timer-auto" type="checkbox"><span></span></span>Переключать работу и перерыв автоматически</label>
+            <button id="timer-test" class="text-button"><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>Прослушать звон</button>
+          </div>
+          <div class="tip"><svg class="tip-icon" aria-hidden="true"><use href="#i-sparkle" /></svg>
+            <h3>Не спешите. Просто начните.</h3>
+            <p>Отмечайте занятия по ходу дня или после завершения. Ошиблись — удалите отрезок, и предыдущий займёт его время.</p>
+          </div>
+        </aside>
+      </div>
+      <div class="section-title">
+        <div>
+          <h2>Отрезки времени <span id="segment-count">0</span></h2>
+          <p class="subtitle">Выберите занятие — отрезок на циферблате получит свой цвет.</p>
+        </div>
+        <div class="select-wrap"><select id="session-select" aria-label="Выбрать сессию"></select></div>
+      </div>
+      <div id="segments" class="segments"></div>
+    </section>
+    <section id="stats" role="tabpanel" hidden>
+      <div class="section-title">
+        <div>
+          <h2>Ваш месяц в цифрах</h2>
+          <p class="subtitle">Маленькие отрезки складываются в большую картину.</p>
+        </div><input id="month" type="month" aria-label="Месяц статистики">
+      </div>
+      <div id="stat-cards" class="stat-cards"></div>
+      <div class="charts">
+        <div class="chart-card">
+          <h3>Распределение времени</h3>
+          <div id="distribution"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Активность по дням</h3>
+          <div id="daily-chart" class="daily-chart"></div>
+          <div class="chart-caption">Дни месяца · наведите на столбец для подробностей</div>
+        </div>
+      </div>
+    </section>
+    <footer><span>темп. &nbsp; Живите в своём ритме.</span><button id="export" class="text-button"><svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>Экспорт данных</button></footer>
+    <p id="error" role="alert" hidden></p>
+  </main>
+  <script src="app.js"></script>
+</body>
+
+</html>
