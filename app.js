@@ -615,73 +615,88 @@ function tick() {
   setHTML($("today-categories"), rows(values));
   if (!$("stats").hidden) renderStats();
 }
+/* Статистика строится в два этапа: разметка создаётся один раз на месяц
+   (тогда же проигрывается анимация появления), а при тиках таймера
+   в ней только обновляются числа и размеры — с плавным переходом. */
+let statsMonth = null;
+function buildStats(year, month) {
+  const days = new Date(year, month, 0).getDate();
+  $("stat-cards").innerHTML = [
+    "Всего учтено",
+    "Учёба",
+    "Перерыв",
+    "Работа",
+  ]
+    .map((title) => `<div class="stat-card"><p>${title}</p><strong></strong></div>`)
+    .join("");
+  $("distribution").innerHTML = Object.entries(categories)
+    .map(
+      ([k, c]) =>
+        `<div class="category-row"><span><i style="background:${c.color}"></i>${c.name}</span><b data-dist="${k}"></b></div><div class="bar-track"><div class="bar-fill" data-bar="${k}" style="width:0;background:${c.color}"></div></div>`,
+    )
+    .join("");
+  $("daily-chart").innerHTML = Array.from(
+    { length: days },
+    (_, i) =>
+      `<div class="day"><div class="day-bar" style="height:1%;animation-delay:${i * 12}ms">${Object.values(
+        categories,
+      )
+        .map((c) => `<span style="height:0;background:${c.color}"></span>`)
+        .join(
+          "",
+        )}</div><small>${i === 0 || (i + 1) % 5 === 0 || i === days - 1 ? i + 1 : ""}</small></div>`,
+  ).join("");
+}
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
 function renderStats() {
   const [year, month] = $("month").value.split("-").map(Number);
   if (!year || !month) return;
+  if (statsMonth !== `${year}-${month}`) {
+    statsMonth = `${year}-${month}`;
+    buildStats(year, month);
+  }
   const from = new Date(year, month - 1, 1),
     to = new Date(year, month, 1),
     values = totals(+from, +to),
     total = Object.values(values).reduce((a, b) => a + b, 0);
-  setHTML(
-    $("stat-cards"),
-    [
-      ["Всего учтено", total],
-      ["Учёба", values.study],
-      ["Перерыв", values.break],
-      ["Работа", values.work],
-    ]
-      .map(
-        ([title, value]) =>
-          `<div class="stat-card"><p>${title}</p><strong>${human(value)}</strong></div>`,
-      )
-      .join(""),
+  const cards = $("stat-cards").querySelectorAll("strong");
+  [total, values.study, values.break, values.work].forEach((v, i) =>
+    setText(cards[i], human(v)),
   );
-  setHTML(
-    $("distribution"),
-    Object.entries(categories)
-      .map(
-        ([k, c]) =>
-          `<div class="category-row"><span><i style="background:${c.color}"></i>${c.name}</span><b>${human(values[k])} · ${total ? Math.round((values[k] / total) * 100) : 0}%</b></div><div class="bar-track"><div class="bar-fill" style="width:${total ? (values[k] / total) * 100 : 0}%;background:${c.color}"></div></div>`,
-      )
-      .join(""),
-  );
-  const days = new Date(year, month, 0).getDate(),
-    data = Array.from({ length: days }, (_, i) =>
+  for (const k of Object.keys(categories)) {
+    setText(
+      $("distribution").querySelector(`[data-dist="${k}"]`),
+      `${human(values[k])} · ${total ? Math.round((values[k] / total) * 100) : 0}%`,
+    );
+    $("distribution").querySelector(`[data-bar="${k}"]`).style.width =
+      `${total ? (values[k] / total) * 100 : 0}%`;
+  }
+  const monthName = from.toLocaleDateString("ru-RU", { month: "long" }),
+    data = Array.from($("daily-chart").children, (_, i) =>
       totals(
         +new Date(year, month - 1, i + 1),
         +new Date(year, month - 1, i + 2),
       ),
     ),
-    max = Math.max(
-      3600000,
-      ...data.map((v) => Object.values(v).reduce((a, b) => a + b, 0)),
-    );
-  setHTML(
-    $("daily-chart"),
-    data
-      .map((v, i) => {
-        const sum = Object.values(v).reduce((a, b) => a + b, 0);
-        return `<div class="day" title="${i + 1} ${from.toLocaleDateString("ru-RU", { month: "long" })}: ${human(sum)}; ${Object.entries(
-          categories,
-        )
-          .map(([k, c]) => c.name + ": " + human(v[k]))
-          .join(
-            "; ",
-          )}"><div class="day-bar" style="height:${Math.max(1, (sum / max) * 100)}%;animation-delay:${i * 12}ms">${Object.entries(
-          categories,
-        )
-          .map(
-            ([k, c]) =>
-              `<span style="height:${sum ? (v[k] / sum) * 100 : 0}%;background:${c.color}"></span>`,
-          )
-          .join(
-            "",
-          )}</div><small>${i === 0 || (i + 1) % 5 === 0 || i === days - 1 ? i + 1 : ""}</small></div>`;
-      })
-      .join(""),
-  );
+    sums = data.map((v) => Object.values(v).reduce((a, b) => a + b, 0)),
+    max = Math.max(3600000, ...sums);
+  Array.from($("daily-chart").children).forEach((day, i) => {
+    const v = data[i],
+      sum = sums[i];
+    day.title = `${i + 1} ${monthName}: ${human(sum)}; ${Object.entries(
+      categories,
+    )
+      .map(([k, c]) => c.name + ": " + human(v[k]))
+      .join("; ")}`;
+    const bar = day.firstElementChild;
+    bar.style.height = `${Math.max(1, (sum / max) * 100)}%`;
+    Object.keys(categories).forEach((k, j) => {
+      bar.children[j].style.height = `${sum ? (v[k] / sum) * 100 : 0}%`;
+    });
+  });
 }
-
 /* ---------- События ---------- */
 $("start").onclick = () => transition("start");
 $("pause").onclick = () => transition("pause");

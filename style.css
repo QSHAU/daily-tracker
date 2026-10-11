@@ -688,7 +688,7 @@ select:hover, input:hover { border-color: var(--tick-major); }
 h3 { font-size: 14px; margin: 0 0 24px; }
 
 .bar-track { height: 9px; background: var(--surface-2); border-radius: 8px; margin: 10px 0 22px; overflow: hidden; }
-.bar-fill { height: 100%; border-radius: 8px; transform-origin: left; animation: grow-x .8s var(--ease) both; }
+.bar-fill { height: 100%; border-radius: 8px; transform-origin: left; animation: grow-x .8s var(--ease) both; transition: width .6s var(--ease); }
 
 .daily-chart { display: flex; gap: 5px; align-items: end; height: 210px; padding-top: 20px; }
 .day { flex: 1; display: flex; height: 100%; flex-direction: column; justify-content: end; align-items: center; gap: 8px; min-width: 0; }
@@ -703,11 +703,11 @@ h3 { font-size: 14px; margin: 0 0 24px; }
   overflow: hidden;
   transform-origin: bottom;
   animation: grow-y .7s var(--ease) both;
-  transition: filter .2s;
+  transition: filter .2s, height .6s var(--ease);
 }
 
 .day:hover .day-bar { filter: brightness(1.12); }
-.day-bar span { display: block; width: 100%; }
+.day-bar span { display: block; width: 100%; transition: height .6s var(--ease); }
 .day small { font-size: 8px; color: var(--text-3); }
 .chart-caption { font-size: 10px; color: var(--text-3); margin-top: 20px; }
 
