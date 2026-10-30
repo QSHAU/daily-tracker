@@ -456,18 +456,34 @@ function arc(r, from, to) {
     [x2, y2] = point(r, b);
   return `M ${x1} ${y1} A ${r} ${r} 0 ${b - a > Math.PI ? 1 : 0} 1 ${x2} ${y2}`;
 }
+// Каждый следующий 12-часовой круг ложится поверх предыдущего и темнее
+const LAP_SHADE = [100, 72, 52, 38];
+function lapColor(color, lap) {
+  const keep = LAP_SHADE[Math.min(lap, LAP_SHADE.length - 1)];
+  return lap ? `color-mix(in srgb, ${color} ${keep}%, var(--lap-shade))` : color;
+}
+function lapOf(s, ts) {
+  return Math.max(0, Math.floor((ts - s.start) / PERIOD));
+}
 function clock(s, now) {
   let svg = "";
   let end = now;
   if (s) {
     end = endOf(s.segments.at(-1), now);
-    const windowStart = Math.max(s.start, end - PERIOD);
+    // Режем отрезки по границам кругов и рисуем круг за кругом — поздние сверху
+    const pieces = [];
     for (const x of s.segments) {
-      let [from, to] = bounds(x, now);
-      from = Math.max(from, windowStart);
+      const [from, to] = bounds(x, now);
       if (to <= from) continue;
-      svg += `<path class="arc" d="${arc(R, from, to)}" style="stroke:${categories[x.category].color}" stroke-width="${W}"/>`;
+      for (let lap = lapOf(s, from); lap <= lapOf(s, to - 1); lap++) {
+        const a = Math.max(from, s.start + lap * PERIOD),
+          b = Math.min(to, s.start + (lap + 1) * PERIOD);
+        if (b > a) pieces.push({ lap, a, b, color: categories[x.category].color });
+      }
     }
+    pieces.sort((p, q) => p.lap - q.lap);
+    for (const p of pieces)
+      svg += `<path class="arc" d="${arc(R, p.a, p.b)}" style="stroke:${lapColor(p.color, p.lap)}" stroke-width="${W}"/>`;
     // Пунктир снаружи кольца — сколько осталось до сигнала таймера
     const t = timerTarget(s);
     if (t && t.at > now) {
@@ -481,9 +497,207 @@ function clock(s, now) {
   if (s) {
     const last = s.segments.at(-1),
       [kx, ky] = point(R, a);
-    svg += `<circle class="now-knob" cx="${kx}" cy="${ky}" r="8" style="fill:${categories[last.category].color}"/>`;
+    svg += `<circle class="now-knob" cx="${kx}" cy="${ky}" r="8" style="fill:${lapColor(categories[last.category].color, lapOf(s, end - 1))}"/>`;
   }
   $("dial-live").innerHTML = svg;
+}
+
+/* ---------- Редактирование времени ----------
+   Отрезки идут встык, поэтому граница всегда общая: меняя начало отрезка,
+   двигаем конец предыдущего, меняя конец — начало следующего. */
+let editing = null; // отрезок, у которого открыта панель правки
+const hhmm = (ts) =>
+  new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+// Время из поля (ЧЧ:ММ) → метка времени, ближайшая к ref (учитывает переход через полночь)
+function nearest(value, ref) {
+  const [h, m] = value.split(":").map(Number),
+    d = new Date(ref);
+  d.setHours(h, m, 0, 0);
+  let t = +d;
+  if (t - ref > 43200000) t -= 86400000;
+  else if (ref - t > 43200000) t += 86400000;
+  return t;
+}
+// Для «остановился в» — последний такой момент, не позже текущего
+function past(value, now) {
+  const t = nearest(value, now);
+  return t > now ? t - 86400000 : t;
+}
+function applyEdit(s, seg, { start, end, stop, finish }) {
+  const now = Date.now(),
+    i = s.segments.indexOf(seg),
+    prev = s.segments[i - 1],
+    next = s.segments[i + 1],
+    k = state.sessions.indexOf(s),
+    prevSession = state.sessions[k - 1],
+    nextSession = state.sessions[k + 1];
+  if (i < 0) return "Отрезок не найден";
+  const newStart = start ?? seg.start,
+    newEnd = seg.end === null ? null : (end ?? seg.end);
+  if (prev && newStart <= prev.start)
+    return `Начало должно быть позже ${time(prev.start)} — начала предыдущего отрезка`;
+  if (!prev && prevSession) {
+    const limit = endOf(prevSession.segments.at(-1), now);
+    if (newStart < limit)
+      return `Начало не может быть раньше ${time(limit)} — конца предыдущей сессии`;
+  }
+  if (newStart >= (newEnd ?? now))
+    return newEnd === null
+      ? "Начало не может быть в будущем"
+      : "Начало должно быть раньше конца";
+  if (newEnd !== null) {
+    if (next && newEnd >= endOf(next, now))
+      return `Конец должен быть раньше ${next.end === null ? "текущего момента" : time(next.end)} — конца следующего отрезка`;
+    if (!next && nextSession && newEnd > nextSession.start)
+      return `Конец не может быть позже ${time(nextSession.start)} — начала следующей сессии`;
+    if (!next && newEnd > now) return "Конец не может быть в будущем";
+  }
+  if (stop !== undefined && (stop <= newStart || stop > now))
+    return `Время остановки должно быть между ${time(newStart)} и текущим моментом`;
+  seg.start = newStart;
+  if (prev) prev.end = newStart;
+  else s.start = newStart;
+  if (newEnd !== null) {
+    seg.end = newEnd;
+    if (next) next.start = newEnd;
+  }
+  editing = null;
+  if (stop !== undefined) transition(finish ? "finish" : "pause", stop);
+  else {
+    save();
+    render();
+  }
+  return null;
+}
+// До какого момента может дотянуться конец отрезка, не залезая на соседей
+function editLimit(s, x, now) {
+  const i = s.segments.indexOf(x),
+    next = s.segments[i + 1],
+    nextSession = state.sessions[state.sessions.indexOf(s) + 1];
+  if (x.end === null) return { max: now, why: "до текущего момента" };
+  // Следующему отрезку оставляем хотя бы минуту
+  if (next)
+    return {
+      max: endOf(next, now) - 60000,
+      why: "дальше идёт следующий отрезок, он станет короче",
+    };
+  if (nextSession) return { max: nextSession.start, why: "дальше начинается следующая сессия" };
+  return { max: now, why: "до текущего момента" };
+}
+function durationField(ms) {
+  const min = Math.max(0, Math.floor(ms / 60000));
+  return `<div class="time-field"><span>Длительность</span><div class="stepper dur"><button class="step" data-dur="-5" aria-label="На 5 минут меньше">${icon("minus")}</button><input type="number" data-dur-part="h" min="0" max="999" inputmode="numeric" value="${Math.floor(min / 60)}" aria-label="Часы"><em>ч</em><input type="number" data-dur-part="m" min="0" max="59" inputmode="numeric" value="${min % 60}" aria-label="Минуты"><em>мин</em><button class="step" data-dur="5" aria-label="На 5 минут больше">${icon("plus")}</button></div></div>`;
+}
+function editPanel(s, x, now) {
+  const running = x.end === null,
+    limit = editLimit(s, x, now);
+  return `<div class="seg-edit" data-max="${limit.max}" data-why="${limit.why}"><div class="edit-fields"><label class="time-field"><span>Начало</span><input type="time" data-edit="start" value="${hhmm(x.start)}"></label>${durationField(endOf(x, now) - x.start)}${
+    running
+      ? `<label class="time-field"><span>${x.kind === "pause" ? "Вернулся к работе в" : "Остановился в"}</span><input type="time" data-edit="stop"></label><div class="quick"><span>или</span>${[5, 10, 15, 30, 60]
+          .map((m) => `<button class="chip" data-ago="${m}">${m < 60 ? m + " мин" : "1 ч"} назад</button>`)
+          .join("")}</div>`
+      : `<label class="time-field"><span>Конец</span><input type="time" data-edit="end" value="${hhmm(x.end)}"></label>`
+  }</div><p class="edit-hint" data-limit></p>${
+    running
+      ? `<p class="edit-hint">Укажите, сколько длился отрезок или когда вы остановились. ${x.kind === "pause" ? "С этого времени снова пойдёт работа." : "С этого времени начнётся перерыв."} Можно и закончить сессию задним числом.</p>`
+      : `<p class="edit-hint">Соседний отрезок подстроится, чтобы между ними не было ни пустоты, ни наложения.</p>`
+  }<p class="edit-error" hidden></p><div class="edit-actions"><button class="btn primary small" data-act="save">Сохранить</button>${
+    running
+      ? `<button class="btn secondary small" data-act="finish" disabled>${icon("flag")}<span>Закончить сессию тогда</span></button>`
+      : ""
+  }<button class="text-button" data-act="cancel">Отмена</button></div></div>`;
+}
+/* Поля панели связаны: начало + длительность = конец.
+   source — какое поле изменили: "start", "end" (конец или «остановился в») или "dur";
+   clamp — подогнать длительность под допустимые границы */
+function syncEdit(panel, source, clamp) {
+  const seg = editing,
+    now = Date.now();
+  if (!seg) return;
+  const running = seg.end === null,
+    q = (sel) => panel.querySelector(sel),
+    startInput = q('[data-edit="start"]'),
+    endInput = q(running ? '[data-edit="stop"]' : '[data-edit="end"]'),
+    hInput = q('[data-dur-part="h"]'),
+    mInput = q('[data-dur-part="m"]'),
+    hint = q("[data-limit]");
+  const start =
+    !startInput.value || startInput.value === hhmm(seg.start)
+      ? seg.start
+      : nearest(startInput.value, seg.start);
+  const max = running ? now : Number(panel.dataset.max),
+    maxMin = Math.floor((max - start) / 60000);
+  let warn = false;
+  const writeDur = (min) => {
+    hInput.value = Math.floor(min / 60);
+    mInput.value = min % 60;
+  };
+  if (source === "dur") {
+    let min = (Number(hInput.value) || 0) * 60 + (Number(mInput.value) || 0);
+    if (clamp) {
+      if (min > maxMin) {
+        min = Math.max(1, maxMin);
+        warn = true;
+      }
+      if (min < 1) min = 1;
+      writeDur(min);
+    }
+    const end = start + min * 60000;
+    endInput.value = hhmm(end);
+    endInput.dataset.exact = String(end);
+    if (running)
+      panel.querySelectorAll("[data-ago]").forEach((b) => b.classList.remove("active"));
+  } else {
+    let end;
+    if (endInput.dataset.exact) end = Number(endInput.dataset.exact);
+    else if (!endInput.value) end = running ? now : seg.end;
+    else if (running) end = past(endInput.value, now);
+    else end = endInput.value === hhmm(seg.end) ? seg.end : nearest(endInput.value, seg.end);
+    writeDur(Math.max(0, Math.floor((end - start) / 60000)));
+  }
+  hint.textContent =
+    maxMin >= 1
+      ? `Не больше ${human(maxMin * 60000)} — ${panel.dataset.why}.`
+      : "Начало слишком позднее — отрезку не остаётся времени.";
+  hint.classList.toggle("warn", warn);
+  if (warn) {
+    hint.classList.remove("shake");
+    hint.offsetWidth;
+    hint.classList.add("shake");
+  }
+  const finish = q('[data-act="finish"]');
+  if (finish) finish.disabled = !endInput.value;
+}
+function submitEdit(row, finish) {
+  const s = current(),
+    seg = editing,
+    now = Date.now(),
+    field = (name) => row.querySelector(`[data-edit="${name}"]`),
+    patch = { finish };
+  if (!s || !seg) return;
+  // Неизменённое поле не трогаем, чтобы не терять секунды
+  const startInput = field("start"),
+    endInput = field("end"),
+    stopInput = field("stop");
+  if (startInput.value && startInput.value !== hhmm(seg.start))
+    patch.start = nearest(startInput.value, seg.start);
+  if (endInput?.dataset.exact) patch.end = Number(endInput.dataset.exact);
+  else if (endInput?.value && endInput.value !== hhmm(seg.end))
+    patch.end = nearest(endInput.value, seg.end);
+  if (stopInput?.value)
+    patch.stop = stopInput.dataset.exact
+      ? Number(stopInput.dataset.exact)
+      : past(stopInput.value, now);
+  if (finish && patch.stop === undefined) return;
+  const error = applyEdit(s, seg, patch);
+  if (error) {
+    const el = row.querySelector(".edit-error");
+    el.textContent = error;
+    el.hidden = false;
+    el.classList.remove("shake");
+    el.offsetWidth;
+    el.classList.add("shake");
+  }
 }
 
 /* ---------- Список отрезков ---------- */
@@ -499,7 +713,7 @@ function renderSegments(now) {
           const enter = seenSegments && !seenSegments.has(x) ? " enter" : "";
           const c = categories[x.category].color;
           const only = s.segments.length === 1;
-          return `<div class="segment${enter}" style="--c:${c}"><span class="segment-number">${String(i + 1).padStart(2, "0")}</span><div class="segment-time"><span>${time(x.start)} — ${x.end === null ? 'сейчас<span class="live"></span>' : time(x.end)}</span><small>${date(x.start)} · ${x.kind === "pause" ? "Пауза" : "Основной отрезок"}${x.end !== null && date(x.end) !== date(x.start) ? " · окончание " + date(x.end) : ""}</small></div><span class="duration" data-duration="${i}">${duration(endOf(x, now) - x.start)}</span><div class="select-wrap"><i></i><select aria-label="Деятельность для отрезка ${i + 1}" data-segment="${i}">${Object.entries(
+          return `<div class="segment${enter}" style="--c:${c}"><span class="segment-number">${String(i + 1).padStart(2, "0")}</span><div class="segment-time"><span>${time(x.start)} — ${x.end === null ? 'сейчас<span class="live"></span>' : time(x.end)}</span><small>${date(x.start)} · ${x.kind === "pause" ? "Пауза" : "Основной отрезок"}${x.end !== null && date(x.end) !== date(x.start) ? " · окончание " + date(x.end) : ""}</small></div><button class="duration" data-duration="${i}" data-edit-toggle="${i}" data-focus="dur" title="Изменить длительность">${duration(endOf(x, now) - x.start)}</button><div class="select-wrap"><i></i><select aria-label="Деятельность для отрезка ${i + 1}" data-segment="${i}">${Object.entries(
             categories,
           )
             .map(
@@ -508,11 +722,13 @@ function renderSegments(now) {
             )
             .join(
               "",
-            )}</select></div><button class="delete" data-delete="${i}" aria-label="Удалить отрезок ${i + 1}" title="${only ? "Удалить сессию" : "Удалить отрезок — его время перейдёт соседнему"}">${icon("trash")}<span class="delete-label">${only ? "Удалить сессию?" : "Удалить?"}</span></button></div>`;
+            )}</select></div><div class="row-actions"><button class="edit${editing === x ? " on" : ""}" data-edit-toggle="${i}" aria-label="Изменить время отрезка ${i + 1}" aria-expanded="${editing === x}" title="Изменить время">${icon("edit")}</button><button class="delete" data-delete="${i}" aria-label="Удалить отрезок ${i + 1}" title="${only ? "Удалить сессию" : "Удалить отрезок — его время перейдёт соседнему"}">${icon("trash")}<span class="delete-label">${only ? "Удалить сессию?" : "Удалить?"}</span></button></div>${editing === x ? editPanel(s, x, now) : ""}</div>`;
         })
         .join("")
     : '<div class="empty">Здесь появится ваш первый отрезок.<br>Нажмите «Начать», когда будете готовы.</div>';
   seenSegments = seen;
+  const panel = $("segments").querySelector(".seg-edit");
+  if (panel) syncEdit(panel, "start", false);
 }
 function render() {
   const s = active(),
@@ -597,11 +813,14 @@ function tick() {
         ? `${date(s.start)}, ${time(s.start)} — ${time(endOf(s.segments.at(-1), now))}`
         : "Начните с одной минуты";
   clock(s, now);
-  $("clock-note").textContent = t
-    ? "Один круг — 12 часов. Пунктир снаружи — время до сигнала таймера."
-    : s
-      ? "Один круг — 12 часов. Для длинных сессий показаны последние 12 часов."
-      : "Один круг — 12 часов. Всё начинается с «Начать».";
+  const lap = s ? lapOf(s, endOf(s.segments.at(-1), now) - 1) : 0;
+  $("clock-note").textContent = lap
+    ? `Один круг — 12 часов. Идёт ${lap + 1}-й круг: он ложится поверх прошлого и выглядит темнее.`
+    : t
+      ? "Один круг — 12 часов. Пунктир снаружи — время до сигнала таймера."
+      : s
+        ? "Один круг — 12 часов. Следующий круг ляжет поверх и будет темнее."
+        : "Один круг — 12 часов. Всё начинается с «Начать».";
   document.querySelectorAll("[data-duration]").forEach((el) => {
     const x = s?.segments[Number(el.dataset.duration)];
     if (x) el.textContent = duration(endOf(x, now) - x.start);
@@ -717,8 +936,85 @@ $("segments").onchange = (e) => {
     renderStats();
   }
 };
+$("segments").addEventListener("input", (e) => {
+  const panel = e.target.closest(".seg-edit");
+  if (!panel) return;
+  if (e.target.dataset.durPart) return syncEdit(panel, "dur", false);
+  const field = e.target.dataset.edit;
+  if (!field) return;
+  if (field !== "start") {
+    delete e.target.dataset.exact; // время введено вручную — с точностью до минуты
+    panel.querySelectorAll("[data-ago]").forEach((b) => b.classList.remove("active"));
+  }
+  syncEdit(panel, field === "start" ? "start" : "end", false);
+});
+// Когда ввод длительности закончен — подгоняем её под допустимые границы
+$("segments").addEventListener("change", (e) => {
+  const panel = e.target.closest(".seg-edit");
+  if (panel && e.target.dataset.durPart) syncEdit(panel, "dur", true);
+});
+$("segments").addEventListener("keydown", (e) => {
+  const row = e.target.closest(".seg-edit") && e.target.closest(".segment");
+  if (!row || e.target.tagName !== "INPUT") return;
+  if (e.key === "Enter") {
+    if (e.target.dataset.durPart) syncEdit(e.target.closest(".seg-edit"), "dur", true);
+    submitEdit(row, false);
+  }
+  if (e.key === "Escape") {
+    editing = null;
+    renderSegments(Date.now());
+  }
+});
 // Удаление в два клика: первый показывает «Удалить?», второй удаляет
 $("segments").onclick = (e) => {
+  const toggle = e.target.closest("[data-edit-toggle]"),
+    act = e.target.closest("[data-act]"),
+    ago = e.target.closest("[data-ago]"),
+    step = e.target.closest("[data-dur]");
+  if (toggle) {
+    const seg = current()?.segments[Number(toggle.dataset.editToggle)],
+      toDuration = toggle.dataset.focus === "dur";
+    // Клик по длительности всегда открывает панель, карандаш — переключает
+    if (editing !== seg || !toDuration) {
+      editing = editing === seg ? null : seg;
+      renderSegments(Date.now());
+    }
+    const panel = $("segments").querySelector(".seg-edit");
+    (toDuration ? panel?.querySelector('[data-dur-part="m"]') : panel?.querySelector("input"))?.focus();
+    return;
+  }
+  if (step) {
+    const panel = step.closest(".seg-edit"),
+      h = panel.querySelector('[data-dur-part="h"]'),
+      m = panel.querySelector('[data-dur-part="m"]'),
+      delta = Number(step.dataset.dur),
+      v = (Number(h.value) || 0) * 60 + (Number(m.value) || 0) + delta;
+    // Шаг 5 минут с выравниванием: 23 → 25 или 20
+    const min = Math.max(1, delta > 0 ? Math.floor(v / 5) * 5 : Math.ceil(v / 5) * 5);
+    h.value = Math.floor(min / 60);
+    m.value = min % 60;
+    syncEdit(panel, "dur", true);
+    return;
+  }
+  if (ago) {
+    const input = ago.closest(".seg-edit").querySelector('[data-edit="stop"]'),
+      at = Date.now() - Number(ago.dataset.ago) * 60000;
+    input.value = hhmm(at);
+    input.dataset.exact = String(at);
+    ago
+      .closest(".seg-edit")
+      .querySelectorAll("[data-ago]")
+      .forEach((b) => b.classList.toggle("active", b === ago));
+    syncEdit(ago.closest(".seg-edit"), "end", false);
+    return;
+  }
+  if (act) {
+    if (act.dataset.act === "cancel") {
+      editing = null;
+      renderSegments(Date.now());
+    } else submitEdit(act.closest(".segment"), act.dataset.act === "finish");
+    return;
+  }
   const btn = e.target.closest("[data-delete]");
   if (!btn) return;
   if (!btn.classList.contains("confirm")) {
