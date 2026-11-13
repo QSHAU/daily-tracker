@@ -38,4 +38,3 @@ server.on("error", (e) => {
 server.listen(PORT, "127.0.0.1", () =>
   console.log(`Темп: http://localhost:${PORT}`),
 );
-bng;
